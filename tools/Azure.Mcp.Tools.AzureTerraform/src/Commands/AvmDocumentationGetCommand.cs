@@ -16,10 +16,12 @@ namespace Azure.Mcp.Tools.AzureTerraform.Commands;
     Name = "get",
     Title = "Get AVM Module Documentation",
     Description = """
-        Retrieves the documentation (README.md) for a specific version of an Azure Verified Module (AVM).
-        Returns the full module documentation including usage examples, input variables,
-        output values, and resource descriptions. Use --module-name and --module-version
-        to specify the module and version (e.g., --module-name avm-res-storage-storageaccount --module-version 0.4.0).
+        Retrieves the documentation (README.md) for an Azure Verified Module (AVM), covering
+        both resource modules (avm-res-*) and pattern modules (avm-ptn-*). Returns the full
+        module documentation including usage examples, input variables, output values, and
+        resource descriptions. Use --module-name to specify the module
+        (e.g., avm-res-storage-storageaccount, avm-ptn-virtualnetwork). The --module-version
+        is optional; when omitted, the latest stable (non-prerelease) release is used.
         """,
     Destructive = false,
     Idempotent = true,
@@ -38,7 +40,7 @@ public sealed class AvmDocumentationGetCommand(
     {
         base.RegisterOptions(command);
         command.Options.Add(AzureTerraformOptionDefinitions.AvmModuleName.AsRequired());
-        command.Options.Add(AzureTerraformOptionDefinitions.AvmModuleVersion.AsRequired());
+        command.Options.Add(AzureTerraformOptionDefinitions.AvmModuleVersion);
     }
 
     protected override AvmDocumentationOptions BindOptions(ParseResult parseResult)
@@ -66,14 +68,14 @@ public sealed class AvmDocumentationGetCommand(
         {
             var documentation = await _avmDocsService.GetDocumentationAsync(
                 options.ModuleName!,
-                options.ModuleVersion!,
+                options.ModuleVersion,
                 cancellationToken).ConfigureAwait(false);
 
             var result = new Models.AvmDocumentationResult
             {
                 ModuleName = options.ModuleName!,
-                ModuleVersion = options.ModuleVersion!,
-                Documentation = documentation
+                ModuleVersion = documentation.ResolvedVersion,
+                Documentation = documentation.Documentation
             };
 
             context.Response.Status = HttpStatusCode.OK;

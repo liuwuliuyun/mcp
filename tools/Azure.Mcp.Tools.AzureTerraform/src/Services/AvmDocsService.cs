@@ -8,8 +8,14 @@ namespace Azure.Mcp.Tools.AzureTerraform.Services;
 
 public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmDocsService
 {
-    private const string AvailableModulesUrl =
+    private const string ResourceModulesUrl =
         "https://raw.githubusercontent.com/Azure/Azure-Verified-Modules/main/docs/static/module-indexes/TerraformResourceModules.csv";
+
+    private const string PatternModulesUrl =
+        "https://raw.githubusercontent.com/Azure/Azure-Verified-Modules/main/docs/static/module-indexes/TerraformPatternModules.csv";
+
+    internal const string ModuleTypeResource = "Resource";
+    internal const string ModuleTypePattern = "Pattern";
 
     private const string ModuleNameColumn = "ModuleName";
     private const string DescriptionColumn = "Description";
@@ -55,7 +61,8 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
             {
                 TagName = tagName,
                 CreatedAt = release.CreatedAt,
-                TarballUrl = release.TarballUrl
+                TarballUrl = release.TarballUrl,
+                Prerelease = release.Prerelease
             });
         }
 
@@ -63,13 +70,23 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
         return versions;
     }
 
-    public async Task<string> GetDocumentationAsync(string moduleName, string moduleVersion, CancellationToken cancellationToken = default)
+    public async Task<AvmDocumentation> GetDocumentationAsync(string moduleName, string? moduleVersion = null, CancellationToken cancellationToken = default)
     {
         var modules = await GetModuleCollectionAsync(cancellationToken).ConfigureAwait(false);
         var module = modules.Find(m => string.Equals(m.ModuleName, moduleName, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException($"Module '{moduleName}' not found in available modules.", nameof(moduleName));
 
-        var cleanVersion = moduleVersion.TrimStart('v');
+        var resolvedVersion = moduleVersion;
+        if (string.IsNullOrWhiteSpace(resolvedVersion))
+        {
+            var versions = await GetVersionsAsync(moduleName, cancellationToken).ConfigureAwait(false);
+            var latestStable = versions.Find(v => !v.Prerelease)
+                ?? throw new InvalidOperationException(
+                    $"Module '{moduleName}' has no stable (non-prerelease) releases. Specify --module-version explicitly.");
+            resolvedVersion = latestStable.TagName;
+        }
+
+        var cleanVersion = resolvedVersion.TrimStart('v');
 
         var repoPath = ExtractRepoPath(module.RepoUrl);
         var readmeUrl = $"https://raw.githubusercontent.com/{repoPath}/v{cleanVersion}/README.md";
@@ -88,10 +105,11 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"No README.md found for module '{moduleName}' version '{moduleVersion}'. HTTP {(int)response.StatusCode}");
+                $"No README.md found for module '{moduleName}' version '{resolvedVersion}'. HTTP {(int)response.StatusCode}");
         }
 
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var documentation = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return new AvmDocumentation(cleanVersion, documentation);
     }
 
     private async Task<List<AvmModule>> GetModuleCollectionAsync(CancellationToken cancellationToken)
@@ -106,11 +124,14 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
 
         using var client = httpClientFactory.CreateClient();
 
-        var response = await client.GetAsync(new Uri(AvailableModulesUrl), cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        var resourceTask = FetchAndParseAsync(client, ResourceModulesUrl, ModuleTypeResource, cancellationToken);
+        var patternTask = FetchAndParseAsync(client, PatternModulesUrl, ModuleTypePattern, cancellationToken);
 
-        var csvContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var modules = ParseModuleCsv(csvContent);
+        await Task.WhenAll(resourceTask, patternTask).ConfigureAwait(false);
+
+        var modules = new List<AvmModule>(resourceTask.Result.Count + patternTask.Result.Count);
+        modules.AddRange(resourceTask.Result);
+        modules.AddRange(patternTask.Result);
 
         lock (CacheLock)
         {
@@ -121,7 +142,20 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
         return modules;
     }
 
-    internal static List<AvmModule> ParseModuleCsv(string csvContent)
+    private static async Task<List<AvmModule>> FetchAndParseAsync(
+        HttpClient client,
+        string url,
+        string moduleType,
+        CancellationToken cancellationToken)
+    {
+        var response = await client.GetAsync(new Uri(url), cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var csvContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return ParseModuleCsv(csvContent, moduleType);
+    }
+
+    internal static List<AvmModule> ParseModuleCsv(string csvContent, string moduleType)
     {
         var lines = csvContent.Split('\n');
         if (lines.Length == 0)
@@ -180,6 +214,7 @@ public sealed class AvmDocsService(IHttpClientFactory httpClientFactory) : IAvmD
             modules.Add(new AvmModule
             {
                 ModuleName = moduleName,
+                ModuleType = moduleType,
                 Description = descIdx >= 0 && descIdx < values.Count ? values[descIdx] : string.Empty,
                 RepoUrl = repoUrl,
                 Source = SourceFromRepoUrl(repoUrl)

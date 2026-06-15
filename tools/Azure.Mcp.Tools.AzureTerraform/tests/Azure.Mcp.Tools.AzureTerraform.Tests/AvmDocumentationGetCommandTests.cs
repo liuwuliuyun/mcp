@@ -28,7 +28,7 @@ public class AvmDocumentationGetCommandTests : CommandUnitTestsBase<AvmDocumenta
     public async Task ExecuteAsync_ValidInput_ReturnsDocumentation()
     {
         Service.GetDocumentationAsync("avm-res-storage-storageaccount", "0.4.0", Arg.Any<CancellationToken>())
-            .Returns("# Azure Storage Account Module\n\nThis module creates a storage account.");
+            .Returns(new AvmDocumentation("0.4.0", "# Azure Storage Account Module\n\nThis module creates a storage account."));
 
         var response = await ExecuteCommandAsync(
             "--module-name", "avm-res-storage-storageaccount",
@@ -47,17 +47,24 @@ public class AvmDocumentationGetCommandTests : CommandUnitTestsBase<AvmDocumenta
     }
 
     [Fact]
-    public async Task ExecuteAsync_MissingModuleVersion_ReturnsValidationError()
+    public async Task ExecuteAsync_MissingModuleVersion_UsesLatestStable()
     {
+        Service.GetDocumentationAsync("avm-res-storage-storageaccount", null, Arg.Any<CancellationToken>())
+            .Returns(new AvmDocumentation("0.5.0", "# Latest docs"));
+
         var response = await ExecuteCommandAsync("--module-name", "avm-res-storage-storageaccount");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.Status);
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        await Service.Received(1).GetDocumentationAsync("avm-res-storage-storageaccount", null, Arg.Any<CancellationToken>());
+
+        var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AvmDocumentationResult);
+        Assert.Equal("0.5.0", result.ModuleVersion);
     }
 
     [Fact]
     public async Task ExecuteAsync_ServiceThrows_HandlesException()
     {
-        Service.GetDocumentationAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        Service.GetDocumentationAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new ArgumentException("Module not found", "moduleName"));
 
         var response = await ExecuteCommandAsync("--module-name", "nonexistent", "--module-version", "1.0.0");
@@ -69,7 +76,7 @@ public class AvmDocumentationGetCommandTests : CommandUnitTestsBase<AvmDocumenta
     public async Task ExecuteAsync_VerifiesServiceCalled()
     {
         Service.GetDocumentationAsync("test-module", "1.0.0", Arg.Any<CancellationToken>())
-            .Returns("# Test Module");
+            .Returns(new AvmDocumentation("1.0.0", "# Test Module"));
 
         await ExecuteCommandAsync("--module-name", "test-module", "--module-version", "1.0.0");
 
@@ -78,15 +85,15 @@ public class AvmDocumentationGetCommandTests : CommandUnitTestsBase<AvmDocumenta
 
     [Theory]
     [InlineData("--module-name avm-res-storage-storageaccount --module-version 0.4.0", true)]
-    [InlineData("--module-name avm-res-storage-storageaccount", false)]
+    [InlineData("--module-name avm-res-storage-storageaccount", true)]
     [InlineData("--module-version 0.4.0", false)]
     [InlineData("", false)]
     public async Task ExecuteAsync_ValidatesInputCorrectly(string args, bool shouldSucceed)
     {
         if (shouldSucceed)
         {
-            Service.GetDocumentationAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns("# Module docs");
+            Service.GetDocumentationAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                .Returns(new AvmDocumentation("0.4.0", "# Module docs"));
         }
 
         var response = await ExecuteCommandAsync(args);
@@ -105,7 +112,7 @@ public class AvmDocumentationGetCommandTests : CommandUnitTestsBase<AvmDocumenta
     public async Task ExecuteAsync_DeserializationValidation()
     {
         Service.GetDocumentationAsync("avm-res-storage-storageaccount", "0.4.0", Arg.Any<CancellationToken>())
-            .Returns("# Azure Storage Account Module\n\nThis module creates a storage account.");
+            .Returns(new AvmDocumentation("0.4.0", "# Azure Storage Account Module\n\nThis module creates a storage account."));
 
         var response = await ExecuteCommandAsync(
             "--module-name", "avm-res-storage-storageaccount",

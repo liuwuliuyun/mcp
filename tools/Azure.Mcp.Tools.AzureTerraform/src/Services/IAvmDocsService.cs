@@ -11,5 +11,7 @@ public interface IAvmDocsService
 
     Task<List<AvmVersion>> GetVersionsAsync(string moduleName, CancellationToken cancellationToken = default);
 
-    Task<string> GetDocumentationAsync(string moduleName, string moduleVersion, CancellationToken cancellationToken = default);
+    Task<AvmDocumentation> GetDocumentationAsync(string moduleName, string? moduleVersion = null, CancellationToken cancellationToken = default);
 }
+
+public readonly record struct AvmDocumentation(string ResolvedVersion, string Documentation);

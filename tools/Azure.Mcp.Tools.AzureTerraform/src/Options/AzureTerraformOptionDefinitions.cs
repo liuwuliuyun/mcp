@@ -87,8 +87,8 @@ public static class AzureTerraformOptionDefinitions
         $"--{AvmModuleVersionOption}"
     )
     {
-        Description = "The version of the Azure Verified Module (e.g., 0.4.0).",
-        Required = true
+        Description = "The version of the Azure Verified Module (e.g., 0.4.0). If omitted, the latest stable (non-prerelease) version is used.",
+        Required = false
     };
 
     public static readonly Option<string> ResourceId = new(

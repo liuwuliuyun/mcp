@@ -15,4 +15,7 @@ internal sealed class GitHubRelease
 
     [JsonPropertyName("tarball_url")]
     public string TarballUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("prerelease")]
+    public bool Prerelease { get; set; }
 }
