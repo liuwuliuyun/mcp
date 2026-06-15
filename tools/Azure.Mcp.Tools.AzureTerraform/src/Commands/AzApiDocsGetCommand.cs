@@ -23,6 +23,8 @@ namespace Azure.Mcp.Tools.AzureTerraform.Commands;
         Use --resource-type to specify the Azure resource type in ARM format
         (e.g., Microsoft.Compute/virtualMachines, Microsoft.Storage/storageAccounts).
         Optionally specify --api-version to target a specific API version.
+        --response-format selects 'concise' (default — schema with inline // descriptions stripped and
+        examples omitted) or 'detailed' (full schema with descriptions and examples).
         This tool reuses Azure Bicep type definitions to generate accurate AzAPI schemas.
         """,
     Destructive = false,
@@ -39,12 +41,14 @@ public sealed class AzApiDocsGetCommand(
     private readonly ILogger<AzApiDocsGetCommand> _logger = logger;
     private readonly IAzApiDocsService _docsService = docsService;
     private readonly IAzApiExamplesService _examplesService = examplesService;
+    private readonly Option<string> _responseFormatOption = AzureTerraformOptionDefinitions.CreateResponseFormatOption();
 
     protected override void RegisterOptions(Command command)
     {
         base.RegisterOptions(command);
         command.Options.Add(AzureTerraformOptionDefinitions.AzApiResourceType.AsRequired());
         command.Options.Add(AzureTerraformOptionDefinitions.ApiVersion.AsOptional());
+        command.Options.Add(_responseFormatOption);
     }
 
     protected override AzApiDocsOptions BindOptions(ParseResult parseResult)
@@ -52,7 +56,8 @@ public sealed class AzApiDocsGetCommand(
         return new AzApiDocsOptions
         {
             ResourceType = parseResult.GetValueOrDefault<string>(AzureTerraformOptionDefinitions.AzApiResourceType.Name),
-            ApiVersion = parseResult.GetValueOrDefault<string>(AzureTerraformOptionDefinitions.ApiVersion.Name)
+            ApiVersion = parseResult.GetValueOrDefault<string>(AzureTerraformOptionDefinitions.ApiVersion.Name),
+            ResponseFormat = parseResult.GetValueOrDefault<string>(_responseFormatOption.Name)
         };
     }
 
@@ -72,20 +77,40 @@ public sealed class AzApiDocsGetCommand(
             return context.Response;
         }
 
-        var options = BindOptions(parseResult);
+        AzApiDocsOptions options;
+        try
+        {
+            options = BindOptions(parseResult);
+        }
+        catch (Exception ex)
+        {
+            SetValidationError(context.Response, ex.Message, HttpStatusCode.BadRequest);
+            return context.Response;
+        }
+
+        var responseFormat = NormalizeResponseFormat(options.ResponseFormat);
 
         try
         {
             var result = _docsService.GetDocumentation(options.ResourceType!, options.ApiVersion);
 
-            var examples = await _examplesService.GetExamplesAsync(
-                options.ResourceType!,
-                cancellationToken).ConfigureAwait(false);
-
-            if (examples.Count > 0)
+            if (string.Equals(responseFormat, AzureTerraformOptionDefinitions.ResponseFormatDetailed, StringComparison.Ordinal))
             {
-                result.Examples = examples;
+                var examples = await _examplesService.GetExamplesAsync(
+                    options.ResourceType!,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (examples.Count > 0)
+                {
+                    result.Examples = examples;
+                }
             }
+            else
+            {
+                DocsConciseRenderer.ApplyConciseToAzApi(result);
+            }
+
+            result.ResponseFormat = responseFormat;
 
             context.Response.Status = HttpStatusCode.OK;
             context.Response.Results = ResponseResult.Create(result, AzureTerraformJsonContext.Default.AzApiDocsResult);
@@ -102,5 +127,17 @@ public sealed class AzApiDocsGetCommand(
         }
 
         return context.Response;
+    }
+
+    private static string NormalizeResponseFormat(string? requested)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            return AzureTerraformOptionDefinitions.ResponseFormatConcise;
+        }
+
+        return requested.Equals(AzureTerraformOptionDefinitions.ResponseFormatDetailed, StringComparison.OrdinalIgnoreCase)
+            ? AzureTerraformOptionDefinitions.ResponseFormatDetailed
+            : AzureTerraformOptionDefinitions.ResponseFormatConcise;
     }
 }

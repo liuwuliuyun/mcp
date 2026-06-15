@@ -7,6 +7,7 @@ public sealed class AzureRMDocsResult
 {
     public string ResourceType { get; set; } = string.Empty;
     public string DocumentationUrl { get; set; } = string.Empty;
+    public string ResponseFormat { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
     public List<ArgumentDetail> Arguments { get; set; } = [];
     public List<AttributeDetail> Attributes { get; set; } = [];

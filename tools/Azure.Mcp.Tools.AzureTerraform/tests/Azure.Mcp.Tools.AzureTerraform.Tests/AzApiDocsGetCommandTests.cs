@@ -114,10 +114,58 @@ public class AzApiDocsGetCommandTests : CommandUnitTestsBase<AzApiDocsGetCommand
         _examplesService.GetExamplesAsync("Microsoft.Compute/virtualMachines", Arg.Any<CancellationToken>())
             .Returns(examples);
 
+        var response = await ExecuteCommandAsync("--resource-type", "Microsoft.Compute/virtualMachines", "--response-format", "detailed");
+
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AzApiDocsResult);
+        Assert.Equal("detailed", result.ResponseFormat);
+        Assert.NotNull(result.Examples);
+        Assert.Single(result.Examples);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DefaultsToConcise_StripsCommentsAndExamples()
+    {
+        var expectedResult = new AzApiDocsResult
+        {
+            ResourceType = "Microsoft.Compute/virtualMachines",
+            ApiVersion = "2024-03-01",
+            Schema = """
+                resource "azapi_resource" "vm" {
+                  type = "Microsoft.Compute/virtualMachines@2024-03-01"
+                  body = {
+                    properties = {
+                      hardwareProfile = { // The hardware profile description
+                        vmSize = "(Required) String. The VM size description"
+                      }
+                    }
+                  }
+                }
+                """,
+            Summary = "AzAPI schema"
+        };
+
+        Service.GetDocumentation("Microsoft.Compute/virtualMachines", null).Returns(expectedResult);
+
         var response = await ExecuteCommandAsync("--resource-type", "Microsoft.Compute/virtualMachines");
 
         Assert.Equal(HttpStatusCode.OK, response.Status);
-        Assert.NotNull(response.Results);
+        var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AzApiDocsResult);
+
+        Assert.Equal("concise", result.ResponseFormat);
+        Assert.Null(result.Examples);
+        Assert.DoesNotContain("//", result.Schema);
+        Assert.Contains("hardwareProfile", result.Schema);
+        Assert.Contains("vmSize", result.Schema);
+        await _examplesService.DidNotReceive().GetExamplesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidResponseFormat_ReturnsError()
+    {
+        var response = await ExecuteCommandAsync("--resource-type", "Microsoft.Compute/virtualMachines", "--response-format", "bogus");
+
+        Assert.NotEqual(HttpStatusCode.OK, response.Status);
     }
 
     [Fact]

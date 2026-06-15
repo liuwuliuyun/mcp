@@ -9,4 +9,5 @@ public sealed class AzureRMDocsOptions
     public string? DocType { get; set; }
     public string? ArgumentName { get; set; }
     public string? AttributeName { get; set; }
+    public string? ResponseFormat { get; set; }
 }

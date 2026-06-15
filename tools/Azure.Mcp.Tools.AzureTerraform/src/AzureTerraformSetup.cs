@@ -28,9 +28,7 @@ public sealed class AzureTerraformSetup : IAreaSetup
         services.AddSingleton<IConftestService, ConftestService>();
         services.AddSingleton<AzureRMDocsGetCommand>();
         services.AddSingleton<AzApiDocsGetCommand>();
-        services.AddSingleton<AvmModuleListCommand>();
-        services.AddSingleton<AvmVersionListCommand>();
-        services.AddSingleton<AvmDocumentationGetCommand>();
+        services.AddSingleton<AvmCommand>();
         services.AddSingleton<AztfexportResourceCommand>();
         services.AddSingleton<AztfexportResourceGroupCommand>();
         services.AddSingleton<AztfexportQueryCommand>();
@@ -66,17 +64,7 @@ public sealed class AzureTerraformSetup : IAreaSetup
 
         group.AddSubGroup(azapiGroup);
 
-        var avmGroup = new CommandGroup(
-            "avm",
-            "Azure Verified Modules (AVM) documentation tools - Lists modules, versions, and retrieves module documentation",
-            "AVM"
-        );
-
-        avmGroup.AddCommand<AvmModuleListCommand>(serviceProvider);
-        avmGroup.AddCommand<AvmVersionListCommand>(serviceProvider);
-        avmGroup.AddCommand<AvmDocumentationGetCommand>(serviceProvider);
-
-        group.AddSubGroup(avmGroup);
+        group.AddCommand<AvmCommand>(serviceProvider);
 
         var aztfexportGroup = new CommandGroup(
             "aztfexport",

@@ -7,4 +7,5 @@ public sealed class AzApiDocsOptions
 {
     public string? ResourceType { get; set; }
     public string? ApiVersion { get; set; }
+    public string? ResponseFormat { get; set; }
 }

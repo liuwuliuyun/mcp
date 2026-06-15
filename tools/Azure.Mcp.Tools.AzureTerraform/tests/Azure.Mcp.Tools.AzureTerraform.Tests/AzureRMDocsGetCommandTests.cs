@@ -154,6 +154,104 @@ public class AzureRMDocsGetCommandTests : CommandUnitTestsBase<AzureRMDocsGetCom
     }
 
     [Fact]
+    public async Task ExecuteAsync_DefaultsToConcise_StripsDescriptions()
+    {
+        Service.GetDocumentationAsync(
+            "azurerm_resource_group",
+            "resource",
+            null,
+            null,
+            Arg.Any<CancellationToken>())
+            .Returns(new AzureRMDocsResult
+            {
+                ResourceType = "azurerm_resource_group",
+                Summary = "Manages a Resource Group.",
+                Arguments =
+                [
+                    new() { Name = "name", Description = "The name.", Required = true, Type = "Single" },
+                    new()
+                    {
+                        Name = "identity",
+                        Description = "Block.",
+                        Required = false,
+                        Type = "Block",
+                        BlockArguments =
+                        [
+                            new() { Name = "type", Description = "Type description.", Required = true, Type = "Single" }
+                        ]
+                    }
+                ],
+                Attributes = [new() { Name = "id", Description = "The ID." }],
+                Examples = ["resource \"azurerm_resource_group\" \"example\" {}"],
+                Notes = ["Some note"]
+            });
+
+        var response = await ExecuteCommandAsync("--resource-type", "azurerm_resource_group");
+
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AzureRMDocsResult);
+
+        Assert.Equal("concise", result.ResponseFormat);
+        Assert.Equal("Manages a Resource Group.", result.Summary);
+        Assert.Equal("name", result.Arguments[0].Name);
+        Assert.Empty(result.Arguments[0].Description);
+        Assert.True(result.Arguments[0].Required);
+        Assert.Equal("identity", result.Arguments[1].Name);
+        Assert.NotNull(result.Arguments[1].BlockArguments);
+        Assert.Single(result.Arguments[1].BlockArguments!);
+        Assert.Equal("type", result.Arguments[1].BlockArguments![0].Name);
+        Assert.Empty(result.Arguments[1].BlockArguments![0].Description);
+        Assert.Empty(result.Attributes[0].Description);
+        Assert.Empty(result.Examples);
+        Assert.Empty(result.Notes);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Detailed_KeepsEverything()
+    {
+        var expectedResult = new AzureRMDocsResult
+        {
+            ResourceType = "azurerm_resource_group",
+            DocumentationUrl = "https://example.com/docs",
+            Summary = "Manages a Resource Group.",
+            Arguments =
+            [
+                new() { Name = "name", Description = "The name.", Required = true, Type = "Single" }
+            ],
+            Attributes = [new() { Name = "id", Description = "The ID." }],
+            Examples = ["resource \"azurerm_resource_group\" \"example\" {}"],
+            Notes = ["Some note"]
+        };
+
+        Service.GetDocumentationAsync(
+            "azurerm_resource_group",
+            "resource",
+            null,
+            null,
+            Arg.Any<CancellationToken>())
+            .Returns(expectedResult);
+
+        var response = await ExecuteCommandAsync("--resource-type", "azurerm_resource_group", "--response-format", "detailed");
+
+        Assert.Equal(HttpStatusCode.OK, response.Status);
+        var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AzureRMDocsResult);
+
+        Assert.Equal("detailed", result.ResponseFormat);
+        Assert.Equal("The name.", result.Arguments[0].Description);
+        Assert.Equal("The ID.", result.Attributes[0].Description);
+        Assert.Single(result.Examples);
+        Assert.Single(result.Notes);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidResponseFormat_ReturnsError()
+    {
+        var response = await ExecuteCommandAsync("--resource-type", "azurerm_resource_group", "--response-format", "bogus");
+
+        Assert.NotEqual(HttpStatusCode.OK, response.Status);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DeserializationValidation()
     {
         var expectedResult = new AzureRMDocsResult
@@ -181,7 +279,7 @@ public class AzureRMDocsGetCommandTests : CommandUnitTestsBase<AzureRMDocsGetCom
             Arg.Any<CancellationToken>())
             .Returns(expectedResult);
 
-        var response = await ExecuteCommandAsync("--resource-type", "azurerm_resource_group");
+        var response = await ExecuteCommandAsync("--resource-type", "azurerm_resource_group", "--response-format", "detailed");
 
         var result = ValidateAndDeserializeResponse(response, AzureTerraformJsonContext.Default.AzureRMDocsResult);
 

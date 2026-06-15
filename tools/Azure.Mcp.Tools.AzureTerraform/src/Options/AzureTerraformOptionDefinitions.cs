@@ -15,6 +15,15 @@ public static class AzureTerraformOptionDefinitions
 
     public const string AvmModuleNameOption = "module-name";
     public const string AvmModuleVersionOption = "module-version";
+    public const string AvmMethodOption = "method";
+    public const string ResponseFormatOption = "response-format";
+
+    internal const string AvmMethodList = "list";
+    internal const string AvmMethodVersions = "versions";
+    internal const string AvmMethodGet = "get";
+
+    public const string ResponseFormatConcise = "concise";
+    public const string ResponseFormatDetailed = "detailed";
 
     public const string ResourceIdOption = "resource-id";
     public const string ResourceGroupOption = "resource-group";
@@ -90,6 +99,28 @@ public static class AzureTerraformOptionDefinitions
         Description = "The version of the Azure Verified Module (e.g., 0.4.0). If omitted, the latest stable (non-prerelease) version is used.",
         Required = false
     };
+
+    public static Option<string> CreateAvmMethodOption()
+    {
+        var option = new Option<string>($"--{AvmMethodOption}")
+        {
+            Description = "Which AVM action to perform: 'list' (catalog of resource + pattern modules), 'versions' (release tags for one module — requires --module-name), or 'get' (README for one module — requires --module-name; --module-version is optional and defaults to latest stable).",
+            Required = true
+        };
+        option.AcceptOnlyFromAmong(AvmMethodList, AvmMethodVersions, AvmMethodGet);
+        return option;
+    }
+
+    public static Option<string> CreateResponseFormatOption()
+    {
+        var option = new Option<string>($"--{ResponseFormatOption}")
+        {
+            Description = "How much detail to return: 'concise' (default — names, types, and required/optional flags only; per-field descriptions stripped) or 'detailed' (full documentation with descriptions, examples, and notes).",
+            Required = false
+        };
+        option.AcceptOnlyFromAmong(ResponseFormatConcise, ResponseFormatDetailed);
+        return option;
+    }
 
     public static readonly Option<string> ResourceId = new(
         $"--{ResourceIdOption}"
