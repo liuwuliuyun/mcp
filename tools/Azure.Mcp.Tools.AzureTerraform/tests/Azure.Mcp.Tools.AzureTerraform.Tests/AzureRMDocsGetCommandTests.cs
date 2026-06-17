@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Net;
+using System.Text.Json;
 using Azure.Mcp.Tools.AzureTerraform.Commands;
 using Azure.Mcp.Tools.AzureTerraform.Models;
 using Azure.Mcp.Tools.AzureTerraform.Services;
@@ -194,16 +195,36 @@ public class AzureRMDocsGetCommandTests : CommandUnitTestsBase<AzureRMDocsGetCom
         Assert.Equal("concise", result.ResponseFormat);
         Assert.Equal("Manages a Resource Group.", result.Summary);
         Assert.Equal("name", result.Arguments[0].Name);
-        Assert.Empty(result.Arguments[0].Description);
+        Assert.Null(result.Arguments[0].Description);
         Assert.True(result.Arguments[0].Required);
         Assert.Equal("identity", result.Arguments[1].Name);
         Assert.NotNull(result.Arguments[1].BlockArguments);
         Assert.Single(result.Arguments[1].BlockArguments!);
         Assert.Equal("type", result.Arguments[1].BlockArguments![0].Name);
-        Assert.Empty(result.Arguments[1].BlockArguments![0].Description);
-        Assert.Empty(result.Attributes[0].Description);
+        Assert.Null(result.Arguments[1].BlockArguments![0].Description);
+        Assert.Null(result.Attributes[0].Description);
         Assert.Empty(result.Examples);
         Assert.Empty(result.Notes);
+    }
+
+    [Fact]
+    public void EmptyDescription_IsOmittedFromJson()
+    {
+        var result = new AzureRMDocsResult
+        {
+            ResourceType = "azurerm_resource_group",
+            ResponseFormat = "concise",
+            Arguments =
+            [
+                new() { Name = "name", Required = true, Type = "Single" }
+            ],
+            Attributes = [new() { Name = "id" }]
+        };
+
+        var json = JsonSerializer.Serialize(result, AzureTerraformJsonContext.Default.AzureRMDocsResult);
+
+        Assert.DoesNotContain("\"description\"", json);
+        Assert.Contains("\"name\":\"name\"", json);
     }
 
     [Fact]

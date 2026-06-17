@@ -78,15 +78,9 @@ public sealed class AzureRMDocsService(IHttpClientFactory httpClientFactory) : I
             Notes = AzureRMDocsParser.ExtractNotes(markdownContent)
         };
 
-        // Populate block argument definitions
+        // Populate block argument definitions, recursing into nested blocks.
         var blockDefinitions = AzureRMDocsParser.ExtractBlockDefinitions(markdownContent);
-        foreach (var arg in result.Arguments)
-        {
-            if (arg.Type == "Block" && blockDefinitions.TryGetValue(arg.Name, out var blockArgs))
-            {
-                arg.BlockArguments = blockArgs;
-            }
-        }
+        AzureRMDocsParser.HydrateBlockArguments(result.Arguments, blockDefinitions);
 
         if (!string.IsNullOrEmpty(argumentName))
         {

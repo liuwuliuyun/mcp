@@ -108,7 +108,7 @@ internal static partial class AzureRMDocsParser
             args.Add(new ArgumentDetail
             {
                 Name = argName,
-                Description = cleanedDescription,
+                Description = NullIfEmpty(cleanedDescription),
                 Required = required,
                 Type = isBlock ? "Block" : "Single",
                 BlockArguments = isBlock ? [] : null
@@ -205,7 +205,7 @@ internal static partial class AzureRMDocsParser
             currentBlockArgs.Add(new ArgumentDetail
             {
                 Name = argName,
-                Description = cleanedDescription,
+                Description = NullIfEmpty(cleanedDescription),
                 Required = required,
                 Type = isNestedBlock ? "Block" : "Single",
                 BlockArguments = isNestedBlock ? [] : null
@@ -218,6 +218,56 @@ internal static partial class AzureRMDocsParser
         }
 
         return blockDefinitions;
+    }
+
+    /// <summary>
+    /// Recursively fills BlockArguments for every argument of Type "Block" using the flat block
+    /// definitions, so nested blocks (e.g. queue_properties -> logging) are fully populated.
+    /// A block name already on the current recursion path is left unexpanded to break cycles.
+    /// </summary>
+    internal static void HydrateBlockArguments(
+        List<ArgumentDetail> args,
+        Dictionary<string, List<ArgumentDetail>> blockDefinitions,
+        HashSet<string>? path = null)
+    {
+        path ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var arg in args)
+        {
+            if (arg.Type != "Block")
+            {
+                continue;
+            }
+
+            if (!blockDefinitions.TryGetValue(arg.Name, out var definition) || path.Contains(arg.Name))
+            {
+                continue;
+            }
+
+            var nested = CloneArguments(definition);
+            arg.BlockArguments = nested;
+
+            path.Add(arg.Name);
+            HydrateBlockArguments(nested, blockDefinitions, path);
+            path.Remove(arg.Name);
+        }
+    }
+
+    private static List<ArgumentDetail> CloneArguments(List<ArgumentDetail> args)
+    {
+        var clones = new List<ArgumentDetail>(args.Count);
+        foreach (var arg in args)
+        {
+            clones.Add(new ArgumentDetail
+            {
+                Name = arg.Name,
+                Description = arg.Description,
+                Required = arg.Required,
+                Type = arg.Type,
+                BlockArguments = arg.Type == "Block" ? [] : null
+            });
+        }
+        return clones;
     }
 
     internal static List<AttributeDetail> ExtractAttributes(string markdownContent)
@@ -260,7 +310,7 @@ internal static partial class AzureRMDocsParser
 
                 if (!attributes.Exists(a => a.Name == attrName))
                 {
-                    attributes.Add(new AttributeDetail { Name = attrName, Description = description });
+                    attributes.Add(new AttributeDetail { Name = attrName, Description = NullIfEmpty(description) });
                 }
 
                 if (line.Contains("block", StringComparison.OrdinalIgnoreCase))
@@ -476,4 +526,6 @@ internal static partial class AzureRMDocsParser
 
         return null;
     }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

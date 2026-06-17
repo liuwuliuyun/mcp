@@ -149,4 +149,117 @@ public class AzureRMDocsServiceParsingTests
         Assert.Equal("type", blocks["identity"][0].Name);
         Assert.True(blocks["identity"][0].Required);
     }
+
+    [Fact]
+    public void HydrateBlockArguments_PopulatesNestedBlocks()
+    {
+        const string markdown = """
+            ## Argument Reference
+
+            The following arguments are supported:
+
+            * `queue_properties` - (Optional) A `queue_properties` block as defined below.
+
+            A `queue_properties` block supports the following:
+
+            * `logging` - (Optional) A `logging` block as defined below.
+
+            A `logging` block supports the following:
+
+            * `delete` - (Required) Indicates whether all delete requests should be logged.
+            * `read` - (Required) Indicates whether all read requests should be logged.
+            * `version` - (Required) The version of storage analytics to configure.
+
+            ## Attributes Reference
+            """;
+
+        var args = AzureRMDocsParser.ExtractArguments(markdown, false);
+        var blocks = AzureRMDocsParser.ExtractBlockDefinitions(markdown);
+        AzureRMDocsParser.HydrateBlockArguments(args, blocks);
+
+        var queueProps = Assert.Single(args, a => a.Name == "queue_properties");
+        Assert.Equal("Block", queueProps.Type);
+        Assert.NotNull(queueProps.BlockArguments);
+
+        var logging = Assert.Single(queueProps.BlockArguments!, a => a.Name == "logging");
+        Assert.Equal("Block", logging.Type);
+        Assert.NotNull(logging.BlockArguments);
+        Assert.Equal(3, logging.BlockArguments!.Count);
+        Assert.Contains(logging.BlockArguments!, a => a.Name == "delete" && a.Required);
+        Assert.Contains(logging.BlockArguments!, a => a.Name == "read");
+        Assert.Contains(logging.BlockArguments!, a => a.Name == "version");
+    }
+
+    [Fact]
+    public void HydrateBlockArguments_BreaksSelfReferentialCycles()
+    {
+        const string markdown = """
+            ## Argument Reference
+
+            The following arguments are supported:
+
+            * `rule` - (Optional) A `rule` block as defined below.
+
+            A `rule` block supports the following:
+
+            * `name` - (Required) The rule name.
+            * `rule` - (Optional) A nested `rule` block as defined below.
+
+            ## Attributes Reference
+            """;
+
+        var args = AzureRMDocsParser.ExtractArguments(markdown, false);
+        var blocks = AzureRMDocsParser.ExtractBlockDefinitions(markdown);
+
+        // Should terminate (no stack overflow) despite rule -> rule self-reference.
+        AzureRMDocsParser.HydrateBlockArguments(args, blocks);
+
+        var rule = Assert.Single(args, a => a.Name == "rule");
+        Assert.NotNull(rule.BlockArguments);
+        var nestedRule = Assert.Single(rule.BlockArguments!, a => a.Name == "rule");
+        // The cycle is broken: the second-level rule is marked as a block but not expanded further.
+        Assert.Equal("Block", nestedRule.Type);
+        Assert.Empty(nestedRule.BlockArguments!);
+    }
+
+    [Fact]
+    public void HydrateBlockArguments_IndependentInstancesPerAttachmentSite()
+    {
+        const string markdown = """
+            ## Argument Reference
+
+            The following arguments are supported:
+
+            * `primary` - (Optional) A `primary` block as defined below.
+            * `secondary` - (Optional) A `secondary` block as defined below.
+
+            A `primary` block supports the following:
+
+            * `shared` - (Optional) A `shared` block as defined below.
+
+            A `secondary` block supports the following:
+
+            * `shared` - (Optional) A `shared` block as defined below.
+
+            A `shared` block supports the following:
+
+            * `value` - (Required) Some value.
+
+            ## Attributes Reference
+            """;
+
+        var args = AzureRMDocsParser.ExtractArguments(markdown, false);
+        var blocks = AzureRMDocsParser.ExtractBlockDefinitions(markdown);
+        AzureRMDocsParser.HydrateBlockArguments(args, blocks);
+
+        var primaryShared = args.Single(a => a.Name == "primary").BlockArguments!.Single(a => a.Name == "shared");
+        var secondaryShared = args.Single(a => a.Name == "secondary").BlockArguments!.Single(a => a.Name == "shared");
+
+        // Both expanded, and they are not the same list instance.
+        Assert.NotNull(primaryShared.BlockArguments);
+        Assert.NotNull(secondaryShared.BlockArguments);
+        Assert.NotSame(primaryShared.BlockArguments, secondaryShared.BlockArguments);
+        Assert.Equal("value", primaryShared.BlockArguments!.Single().Name);
+        Assert.Equal("value", secondaryShared.BlockArguments!.Single().Name);
+    }
 }
